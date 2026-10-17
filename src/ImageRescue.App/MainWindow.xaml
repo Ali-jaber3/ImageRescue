@@ -37,7 +37,9 @@
    <Setter Property="Template"><Setter.Value>
     <ControlTemplate TargetType="TextBox">
      <Border Background="{TemplateBinding Background}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="11">
-      <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+      <ScrollViewer x:Name="PART_ContentHost" Margin="10,0" VerticalAlignment="Center"
+       HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+       VerticalScrollBarVisibility="Hidden"/>
      </Border>
     </ControlTemplate>
    </Setter.Value></Setter>
@@ -141,12 +143,33 @@
      <TextBlock x:Name="DestinationLabel" Margin="0,18,0,8"/>
      <Grid>
       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <TextBox x:Name="DestinationPathBox" IsReadOnly="True" FlowDirection="LeftToRight" HorizontalScrollBarVisibility="Hidden"/>
+      <TextBox x:Name="DestinationPathBox" IsReadOnly="True" FlowDirection="LeftToRight" HorizontalScrollBarVisibility="Hidden"
+       ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
       <Button x:Name="FolderButton" Grid.Column="1" Click="ChooseFolder_Click"/>
      </Grid>
+     <Border Background="{DynamicResource Field}" CornerRadius="10" Padding="12" Margin="0,8,0,0">
+      <TextBlock x:Name="DestinationVisibleText" Text="{Binding Text, ElementName=DestinationPathBox}"
+       FlowDirection="LeftToRight" TextAlignment="Left" TextWrapping="Wrap"
+       FontFamily="Consolas" Foreground="{DynamicResource Text}"/>
+     </Border>
+     <Button x:Name="CopyPathButton" HorizontalAlignment="Left" Click="CopyPath_Click"/>
+     <WrapPanel Margin="0,12,0,0">
+      <StackPanel Margin="0,0,16,8" Width="220">
+       <TextBlock x:Name="ModeLabel" Margin="0,0,0,6"/>
+       <ComboBox x:Name="ModeSelector" SelectionChanged="Mode_Changed">
+        <ComboBoxItem x:Name="QuickItem"/><ComboBoxItem x:Name="DeepItem"/>
+       </ComboBox>
+      </StackPanel>
+      <StackPanel Width="250" Margin="0,0,0,8">
+       <TextBlock x:Name="PrefixLabel" Margin="0,0,0,6"/>
+       <TextBox x:Name="PrefixBox" Text="image" FlowDirection="LeftToRight" MaxLength="80"/>
+      </StackPanel>
+     </WrapPanel>
+     <TextBlock x:Name="ModeHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,3,0,0"/>
      <TextBlock x:Name="SupportText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,16,0,10"/>
      <WrapPanel>
       <Button x:Name="ScanButton" Background="{DynamicResource Accent}" Foreground="{DynamicResource AccentText}" Click="StartScan_Click"/>
+      <Button x:Name="PauseButton" Click="Pause_Click" IsEnabled="False"/>
       <Button x:Name="CancelButton" Click="Cancel_Click" IsEnabled="False"/>
      </WrapPanel>
     </StackPanel>
@@ -154,9 +177,18 @@
    <Border Style="{StaticResource CardStyle}">
     <StackPanel>
      <TextBlock x:Name="ResultsTitle" FontSize="19" FontWeight="SemiBold" Margin="0,0,0,14"/>
+     <WrapPanel Margin="0,0,0,12">
+      <TextBlock x:Name="SortLabel" VerticalAlignment="Center" Margin="0,0,8,0"/>
+      <ComboBox x:Name="SortSelector" Width="160" SelectionChanged="Sort_Changed" Margin="0,0,6,0">
+       <ComboBoxItem x:Name="SortNameItem"/><ComboBoxItem x:Name="SortSizeItem"/><ComboBoxItem x:Name="SortTypeItem"/>
+      </ComboBox>
+      <Button x:Name="DirectionButton" Click="Direction_Click"/>
+      <Button x:Name="RenameButton" Click="Rename_Click" IsEnabled="False"/>
+     </WrapPanel>
      <!-- Fixed viewport preserves virtualization and gives the results their own scrollbar. -->
      <DataGrid x:Name="ResultsGrid" Height="280" AutoGenerateColumns="False" IsReadOnly="True"
-      CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column" RowHeight="38"
+      CanUserAddRows="False" CanUserDeleteRows="False" CanUserSortColumns="True" HeadersVisibility="Column" RowHeight="38"
+      SelectionMode="Single" SelectionChanged="Results_SelectionChanged"
       Background="{DynamicResource Card}" RowBackground="{DynamicResource Card}" AlternatingRowBackground="{DynamicResource Surface}"
       BorderThickness="0" GridLinesVisibility="None" EnableRowVirtualization="True"
       ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"
@@ -164,11 +196,14 @@
       <DataGrid.Columns>
        <DataGridTextColumn x:Name="FileColumn" Binding="{Binding FileName}" Width="*" MinWidth="230"/>
        <DataGridTextColumn x:Name="TypeColumn" Binding="{Binding FileType}" Width="80"/>
-       <DataGridTextColumn x:Name="SizeColumn" Binding="{Binding FileSize}" Width="110"/>
+       <DataGridTextColumn x:Name="SizeColumn" Binding="{Binding FileSize}" SortMemberPath="Bytes" Width="210"/>
+       <DataGridTextColumn x:Name="DimensionsColumn" Binding="{Binding Dimensions}" Width="120"/>
        <DataGridTextColumn x:Name="OffsetColumn" Binding="{Binding Offset}" Width="130"/>
       </DataGrid.Columns>
      </DataGrid>
      <TextBlock x:Name="EmptyHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+     <TextBlock x:Name="ResultsPathLabel" Foreground="{DynamicResource Muted}" Margin="0,12,0,5"/>
+     <TextBlock x:Name="ResultsPathText" FlowDirection="LeftToRight" TextAlignment="Left" FontFamily="Consolas" TextWrapping="Wrap"/>
     </StackPanel>
    </Border>
    <ProgressBar x:Name="ScanProgress" Height="8" Minimum="0" Maximum="100" Background="{DynamicResource Surface}" Foreground="{DynamicResource Accent}" BorderThickness="0"/>

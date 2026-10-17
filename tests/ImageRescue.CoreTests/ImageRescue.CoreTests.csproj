@@ -5,6 +5,7 @@
  </PropertyGroup>
  <ItemGroup>
   <Compile Include="../../src/ImageRescue.App/Recovery/Carver.cs" Link="Carver.cs"/>
+  <Compile Include="../../src/ImageRescue.App/Recovery/ResultFiles.cs" Link="ResultFiles.cs"/>
   <Content Include="Fixtures/*" CopyToOutputDirectory="PreserveNewest"/>
  </ItemGroup>
 </Project>

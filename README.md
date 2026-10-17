@@ -18,7 +18,7 @@ An experimental, open-source Windows photo-recovery application built with C#,
 Requires Windows x64 and .NET 10 SDK. No third-party NuGet dependencies.
 
 ```powershell
-dotnet build .\src\ImageRescue.App -c Release
+dotnet build .\src\ImageRescue.App\ImageRescue.App.csproj -c Release
 Start-Process '.\src\ImageRescue.App\bin\Release\net10.0-windows\ImageRescue.App.exe' -Verb RunAs
 ```
 
@@ -58,10 +58,10 @@ report is a record of the run; session reopening/resume is **not** implemented y
 ## Verification
 
 ```powershell
-dotnet run --project .\tests\ImageRescue.CoreTests
+dotnet run --project .\tests\ImageRescue.CoreTests\ImageRescue.CoreTests.csproj
 ```
 
-The dependency-free test runner performs 27 checks, including boundary-spanning
+The dependency-free test runner performs 45 checks, including boundary-spanning
 signatures, exact recovered bytes/hashes, baseline/progressive JPEG and PNG fixtures,
 PNG CRC corruption, truncation, false signatures, short reads, cancellation, I/O errors
 and session reports. Fixtures are synthetic images generated for this project.
@@ -85,3 +85,35 @@ The script creates an ordinary file; it does not format or write raw sectors.
 A Windows GitHub Actions workflow builds the app and runs the recovery checks.
 MIT licensed. This repository is under active development; it is not a forensic
 or professional data-recovery guarantee.
+
+## Version 0.2 additions
+
+- Always-visible, wrapping destination path, copy-path button and actual output directory.
+- Quick scan checks only 512-byte-aligned candidate starts. Deep scan checks every byte.
+  Both read the whole source; quick reduces candidate-search CPU work and may miss files.
+  Deep is the default. Neither mode reconstructs fragmented files.
+- Cooperative pause/resume (acknowledged at a worker checkpoint), plus cancellation while paused.
+- Filename prefix before scanning and selected-image rename after scanning, with session report updates.
+  Original deleted filenames cannot be reconstructed by this signature-only scanner.
+- Explicit name/type/numeric-byte-size sorting in ascending or descending order.
+- Exact byte counts, MiB sizes, parsed pixel dimensions and SHA-256 session records.
+
+The application never re-encodes or compresses recovered images. Byte-for-byte recovery
+is tested against baseline/progressive JPEG and PNG fixtures. A small recovered file
+can be a pre-existing embedded thumbnail, a different image, or incomplete recovery;
+matching visual subject matter alone does not prove that it is the full original.
+Use original-vs-recovered SHA-256 comparisons when the original is available. Structural
+checks cannot guarantee that corrupted or fragmented data was reconstructed correctly.
+
+### Clean update installation
+
+Close ImageRescue. Extract the update ZIP outside the repository. Run its installer:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File 'C:\path\to\extracted\Install-Update.ps1' -RepoPath (Get-Location).Path
+```
+
+Run that command from the existing repository root. The installer moves the old `src`
+to a unique sibling backup and copies a clean `src`; it preserves `.git`, and backs up
+replaced documentation/test files. This avoids duplicate `(2)` source files. It does
+not commit or push anything. Build and test before pushing.

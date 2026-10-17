@@ -70,7 +70,64 @@ try
         Check(File.ReadAllBytes(Path.Combine(work, "fixture-" + testName,
             actualFile.FileName)).SequenceEqual(original), "Real image exact-byte match: " + testName);
         Check(SHA256.HashData(container).SequenceEqual(before), "Source unchanged: " + testName);
+        Check(actualFile.Width == 23 && actualFile.Height == 17, "Pixel dimensions: " + testName);
     }
+    byte[] modesData = new byte[4096];
+    png.CopyTo(modesData, 512);
+    jpeg.CopyTo(modesData, 1777);
+    using (var stream = new MemoryStream(modesData))
+    {
+        var quick = Carver.Scan(stream, "quick", Path.Combine(work, "quick"), null, null,
+            default, ScanMode.Quick, namePrefix: "holiday");
+        Check(quick.Files.Count == 1 && quick.Files[0].Offset == 512, "Quick checks only sector boundaries");
+        Check(quick.Mode == "Quick", "Report records quick mode");
+        Check(quick.Files[0].FileName.StartsWith("holiday_"), "Custom name prefix used");
+    }
+    Check(Run(modesData, "deep").Files.Count == 2, "Deep also finds unaligned images");
+    using (var stream = new MemoryStream(image))
+    using (var pause = new PauseController())
+    using (var reached = new ManualResetEventSlim())
+    {
+        pause.Pause(); pause.Paused = reached.Set;
+        var task = Task.Run(() => Carver.Scan(stream, "paused", Path.Combine(work, "paused"),
+            null, null, default, ScanMode.Deep, pause));
+        Check(reached.Wait(TimeSpan.FromSeconds(3)), "Worker acknowledges pause checkpoint");
+        Check(!task.IsCompleted, "Scan remains blocked while paused");
+        pause.Resume();
+        Check(task.Wait(TimeSpan.FromSeconds(5)) && task.Result.Files.Count == 2, "Resume completes without duplicate results");
+    }
+    using (var stream = new MemoryStream(image))
+    using (var pause = new PauseController())
+    using (var reached = new ManualResetEventSlim())
+    using (var cancel = new CancellationTokenSource())
+    {
+        pause.Pause(); pause.Paused = reached.Set;
+        var task = Task.Run(() => Carver.Scan(stream, "paused-cancel", Path.Combine(work, "paused-cancel"),
+            null, null, cancel.Token, ScanMode.Deep, pause));
+        Check(reached.Wait(TimeSpan.FromSeconds(3)), "Second paused scan acknowledged");
+        cancel.Cancel();
+        Check(task.Wait(TimeSpan.FromSeconds(5)) && task.Result.Outcome == "Cancelled", "Cancel unblocks a paused scan");
+    }
+    string renameFolder = Path.Combine(work, "fixture-baseline");
+    var renameReport = JsonSerializer.Deserialize<ScanReport>(File.ReadAllText(Path.Combine(renameFolder, "scan-session.json")))!;
+    var originalItem = renameReport.Files.Single();
+    var renamedItem = ResultFiles.Rename(renameFolder, originalItem, "my_photo");
+    Check(File.Exists(Path.Combine(renameFolder, "my_photo.jpg")), "Rename changes the actual filename");
+    Check(!File.Exists(Path.Combine(renameFolder, originalItem.FileName)), "Old filename no longer exists");
+    Check(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(renameFolder, renamedItem.FileName))))
+        == originalItem.Sha256, "Rename preserves every image byte");
+    Check(JsonSerializer.Deserialize<ScanReport>(File.ReadAllText(Path.Combine(renameFolder,
+        "scan-session.json")))!.Files.Single().FileName == "my_photo.jpg", "Rename updates session report");
+    bool invalid = false;
+    try { ResultFiles.Rename(renameFolder, renamedItem, "../outside"); }
+    catch (ArgumentException) { invalid = true; }
+    Check(invalid, "Path traversal filename rejected");
+    File.WriteAllText(Path.Combine(renameFolder, "taken.jpg"), "untouched");
+    bool collision = false;
+    try { ResultFiles.Rename(renameFolder, renamedItem, "taken"); }
+    catch (IOException) { collision = true; }
+    Check(collision && File.ReadAllText(Path.Combine(renameFolder, "taken.jpg")) == "untouched",
+        "Rename never overwrites an existing image");
     Console.WriteLine($"PASS: {checks} checks");
 }
 finally { Directory.Delete(work, true); }

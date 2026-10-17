@@ -7,15 +7,36 @@ using System.Text.Json;
 namespace ImageRescue.App.Recovery;
 
 public sealed record RecoveredImage(string FileName, string FileType, long Bytes,
-    long Offset, string Sha256)
+    long Offset, string Sha256, int Width = 0, int Height = 0)
 {
-    public string FileSize => $"{Bytes / 1024d:N1} KB";
+    public string FileSize => $"{Bytes:N0} B ({Bytes / 1048576d:N2} MiB)";
+    public string Dimensions => $"{Width} × {Height}";
+}
+
+public enum ScanMode { Quick, Deep }
+
+public sealed class PauseController : IDisposable
+{
+    private readonly ManualResetEventSlim _gate = new(true);
+    public Action? Paused { get; set; }
+    public bool IsPauseRequested => !_gate.IsSet;
+    public void Pause() => _gate.Reset();
+    public void Resume() => _gate.Set();
+    public void Checkpoint(CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (_gate.IsSet) return;
+        Paused?.Invoke();
+        _gate.Wait(token);
+        token.ThrowIfCancellationRequested();
+    }
+    public void Dispose() => _gate.Dispose();
 }
 
 public sealed record ScanUpdate(double Percent, long Scanned, int Found);
 public sealed record ScanReport(string Source, long SourceBytes, string Scope,
     DateTime StartedUtc, DateTime FinishedUtc, string Outcome, long NextOffset,
-    List<RecoveredImage> Files);
+    List<RecoveredImage> Files, string Mode = "Deep");
 
 // The scanner is independent of WPF and can be tested with ordinary streams.
 public static class Carver
@@ -26,12 +47,14 @@ public static class Carver
 
     public static ScanReport Scan(Stream source, string sourceName, string destination,
         IProgress<ScanUpdate>? progress, IProgress<RecoveredImage>? found,
-        CancellationToken cancellation)
+        CancellationToken cancellation, ScanMode mode = ScanMode.Deep,
+        PauseController? pause = null, string namePrefix = "image")
     {
+        ResultFiles.ValidateBaseName(namePrefix);
         Directory.CreateDirectory(destination);
         var started = DateTime.UtcNow;
         var files = new List<RecoveredImage>();
-        var reader = new CachedReader(source, cancellation);
+        var reader = new CachedReader(source, cancellation, pause);
         var scanBuffer = new byte[1024 * 1024 + 7];
         long position = 0;
         string outcome = "Completed";
@@ -41,7 +64,7 @@ public static class Carver
         {
             while (position < source.Length)
             {
-                cancellation.ThrowIfCancellationRequested();
+                Checkpoint();
                 source.Position = position;
                 int wanted = (int)Math.Min(scanBuffer.Length, source.Length - position);
                 int count = ReadSome(source, scanBuffer, wanted);
@@ -50,9 +73,11 @@ public static class Carver
                 // Seven bytes overlap protects PNG signatures crossing a scan block.
                 int step = Math.Min(1024 * 1024, count);
                 long next = position + step;
-                for (int i = 0; i < step; i++)
+                int stride = mode == ScanMode.Quick ? 512 : 1;
+                int initial = (int)((stride - position % stride) % stride);
+                for (int i = initial; i < step; i += stride)
                 {
-                    if ((i & 4095) == 0) cancellation.ThrowIfCancellationRequested();
+                    if ((i & 4095) == 0) Checkpoint();
                     bool png = i + 8 <= count &&
                         scanBuffer.AsSpan(i, 8).SequenceEqual(PngSignature);
                     bool jpg = i + 3 <= count && scanBuffer[i] == 255 &&
@@ -64,11 +89,12 @@ public static class Carver
                     if (end <= start) continue;
 
                     string extension = png ? "png" : "jpg";
-                    string name = $"image_{start:X16}.{extension}";
+                    string name = $"{namePrefix}_{start:X16}.{extension}";
+                    var dimensions = Dimensions(reader, start, png);
                     string hash = Export(source, start, end - start,
-                        Path.Combine(destination, name), cancellation);
+                        Path.Combine(destination, name), cancellation, pause);
                     var item = new RecoveredImage(name, extension.ToUpperInvariant(),
-                        end - start, start, hash);
+                        end - start, start, hash, dimensions.Width, dimensions.Height);
                     files.Add(item);
                     found?.Report(item);
                     if (files.Count >= 10000)
@@ -84,7 +110,8 @@ public static class Carver
                         next = end;
                         break;
                     }
-                    i = (int)(end - position) - 1;
+                    long alignedEnd = ((end + stride - 1) / stride) * stride;
+                    i = (int)(alignedEnd - position) - stride;
                 }
                 position = next;
                 if (watch.ElapsedMilliseconds >= 150)
@@ -108,7 +135,7 @@ public static class Carver
             var result = new ScanReport(sourceName, source.Length,
                 "Signature carving: existing and deleted contiguous images; not deleted-only. " +
                 "Structure checked, not a guarantee of pixel integrity. Maximum image: 64 MiB.",
-                started, DateTime.UtcNow, outcome, position, files);
+                started, DateTime.UtcNow, outcome, position, files, mode.ToString());
             string reportPath = Path.Combine(destination, "scan-session.json");
             File.WriteAllText(reportPath, JsonSerializer.Serialize(result,
                 new JsonSerializerOptions { WriteIndented = true }));
@@ -116,6 +143,33 @@ public static class Carver
                 Math.Min(100, 100d * position / Math.Max(1, source.Length)), position, files.Count));
             return result;
         }
+
+        void Checkpoint()
+        {
+            if (pause is not null) pause.Checkpoint(cancellation);
+            else cancellation.ThrowIfCancellationRequested();
+        }
+    }
+
+    private static (int Width, int Height) Dimensions(CachedReader reader, long start, bool png)
+    {
+        if (png) return ((int)reader.UInt32(start + 16), (int)reader.UInt32(start + 20));
+        long p = start + 2;
+        while (p + 4 < reader.Length)
+        {
+            reader.CheckCancellation();
+            if (reader.Byte(p++) != 255) break;
+            while (reader.Byte(p) == 255) p++;
+            int marker = reader.Byte(p++);
+            if (marker is 0xC0 or 0xC1 or 0xC2)
+                return ((reader.Byte(p + 5) << 8) | reader.Byte(p + 6),
+                    (reader.Byte(p + 3) << 8) | reader.Byte(p + 4));
+            if (marker == 1) continue;
+            int size = (reader.Byte(p) << 8) | reader.Byte(p + 1);
+            if (size < 2) break;
+            p += size;
+        }
+        return (0, 0);
     }
 
     public static long PngEnd(CachedReader reader, long start)
@@ -246,7 +300,7 @@ public static class Carver
     }
 
     private static string Export(Stream source, long start, long size, string path,
-        CancellationToken cancellation)
+        CancellationToken cancellation, PauseController? pause)
     {
         string temporary = path + ".part";
         bool created = false;
@@ -262,6 +316,7 @@ public static class Carver
                 while (remaining > 0)
                 {
                     cancellation.ThrowIfCancellationRequested();
+                    pause?.Checkpoint(cancellation);
                     int n = source.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
                     if (n == 0) throw new EndOfStreamException();
                     output.Write(buffer, 0, n);
@@ -304,13 +359,17 @@ public static class Carver
     }
 }
 
-public sealed class CachedReader(Stream stream, CancellationToken cancellation)
+public sealed class CachedReader(Stream stream, CancellationToken cancellation, PauseController? pause = null)
 {
     private readonly byte[] _buffer = new byte[1024 * 1024];
     private long _start = -1;
     private int _count;
     public long Length => stream.Length;
-    public void CheckCancellation() => cancellation.ThrowIfCancellationRequested();
+    public void CheckCancellation()
+    {
+        cancellation.ThrowIfCancellationRequested();
+        pause?.Checkpoint(cancellation);
+    }
 
     public int Byte(long offset)
     {

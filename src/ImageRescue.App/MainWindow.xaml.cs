@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Data;
 using Microsoft.Win32;
 using ImageRescue.App.Recovery;
 
@@ -19,6 +20,8 @@ public partial class MainWindow : Window
     private string? _imagePath, _output;
     private StorageTarget? _device;
     private CancellationTokenSource? _cancellation;
+    private PauseController? _pause;
+    private bool _descending;
     private readonly ObservableCollection<RecoveredImage> _files = [];
 
     public MainWindow()
@@ -27,9 +30,12 @@ public partial class MainWindow : Window
         ResultsGrid.ItemsSource = _files;
         LanguageSelector.SelectedIndex = 1;
         ThemeSelector.SelectedIndex = 0;
+        ModeSelector.SelectedIndex = 1;
+        SortSelector.SelectedIndex = 0;
         _ready = true;
         ApplyTheme();
         ApplyLanguage();
+        ApplySort();
         Loaded += async (_, _) => await RefreshDevices();
     }
 
@@ -59,6 +65,21 @@ public partial class MainWindow : Window
         FolderButton.Content = T("Choose folder", "اختيار المجلد");
         ScanButton.Content = T("Scan and recover", "فحص واسترجاع");
         CancelButton.Content = T("Cancel", "إلغاء");
+        PauseButton.Content = _pause?.IsPauseRequested == true ? T("Resume", "متابعة") : T("Pause", "إيقاف مؤقت");
+        ModeLabel.Text = T("Scan mode", "نوع البحث");
+        QuickItem.Content = T("Quick", "بحث سريع");
+        DeepItem.Content = T("Deep", "بحث عميق");
+        PrefixLabel.Text = T("Image name prefix", "بداية أسماء الصور");
+        CopyPathButton.Content = T("Copy destination path", "نسخ مسار الحفظ");
+        SortLabel.Text = T("Sort by", "فرز حسب");
+        SortNameItem.Content = T("Name", "الاسم");
+        SortSizeItem.Content = T("Size", "الحجم");
+        SortTypeItem.Content = T("Type", "النوع");
+        DirectionButton.Content = _descending ? T("Descending ↓", "تنازلي ↓") : T("Ascending ↑", "تصاعدي ↑");
+        RenameButton.Content = T("Rename selected image", "تغيير اسم الصورة المحددة");
+        ResultsPathLabel.Text = T("Actual results folder", "المجلد الفعلي للصور المسترجعة");
+        DimensionsColumn.Header = T("Pixels", "الأبعاد");
+        UpdateModeHint();
         SupportText.Text = T(
             "Read-only scan of the selected volume, not the whole physical device. Finds existing and deleted contiguous JPEG/PNG images. Use another disk for output. Administrator access is required for USB/SD.",
             "فحص القسم المختار للقراءة فقط، وليس كامل الجهاز الفعلي. يبحث عن صور JPG وPNG المتصلة، الموجودة والمحذوفة. الحفظ على قرص آخر. فحص USB وSD يحتاج تشغيل البرنامج كمسؤول.");
@@ -169,6 +190,14 @@ public partial class MainWindow : Window
             Warn(T("Choose an existing destination folder.", "اختر مجلدًا موجودًا لحفظ النتائج."));
             return;
         }
+        string prefix = PrefixBox.Text.Trim();
+        try { ResultFiles.ValidateBaseName(prefix); }
+        catch (ArgumentException)
+        {
+            Warn(T("Enter a valid filename prefix (1–80 characters, without <>:\"/\\|?*).",
+                "اكتب بداية اسم صالحة من 1 إلى 80 حرفًا، دون الرموز <>:\"/\\|?*."));
+            return;
+        }
         if (_device is not null && !WindowsStorage.IsAdministrator)
         {
             Warn(T("Close the app and launch its EXE using Run as administrator.",
@@ -182,7 +211,16 @@ public partial class MainWindow : Window
         _files.Clear();
         ScanProgress.Value = 0;
         _output = null;
+        ResultsPathText.Text = "";
         _cancellation = new CancellationTokenSource();
+        var pausedProgress = new Progress<bool>(_ =>
+        {
+            if (_busy && _pause?.IsPauseRequested == true && _state == "pausing")
+            { _state = "paused"; UpdateStatus(); }
+        });
+        _pause = new PauseController { Paused = () => ((IProgress<bool>)pausedProgress).Report(true) };
+        var pause = _pause;
+        var mode = ModeSelector.SelectedIndex == 0 ? ScanMode.Quick : ScanMode.Deep;
         var token = _cancellation.Token;
         _state = "scanning";
         SetBusy(true);
@@ -191,6 +229,8 @@ public partial class MainWindow : Window
         var progress = new Progress<ScanUpdate>(p =>
         {
             ScanProgress.Value = Math.Clamp(p.Percent, 0, 100);
+            ResultsPathText.Text = _output ?? "";
+            CollectionViewSource.GetDefaultView(_files).Refresh();
             if (_busy) UpdateStatus();
         });
         var found = new Progress<RecoveredImage>(item => _files.Add(item));
@@ -204,8 +244,10 @@ public partial class MainWindow : Window
                     ? WindowsStorage.OpenSource(device, destination)
                     : OpenImage(image!, destination);
                 _output = output;
-                return Carver.Scan(source, device?.Root ?? image!, output, progress, found, token);
+                return Carver.Scan(source, device?.Root ?? image!, output, progress, found, token,
+                    mode, pause, prefix);
             });
+            ResultsPathText.Text = output;
             _state = report.Outcome switch
             {
                 "Cancelled" => "cancelled",
@@ -220,10 +262,14 @@ public partial class MainWindow : Window
         }
         finally
         {
+            ResultsPathText.Text = _output ?? "";
             SetBusy(false);
             UpdateStatus();
             _cancellation.Dispose();
             _cancellation = null;
+            _pause.Dispose();
+            _pause = null;
+            PauseButton.Content = T("Pause", "إيقاف مؤقت");
             if (_closeAfterScan) Close();
         }
     }
@@ -234,9 +280,137 @@ public partial class MainWindow : Window
         return new FileStream(image, FileMode.Open, FileAccess.Read, FileShare.Read);
     }
 
+    private void Mode_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_ready) UpdateModeHint();
+    }
+
+    private void UpdateModeHint()
+    {
+        ModeHint.Text = ModeSelector.SelectedIndex == 0
+            ? T("Quick: checks 512-byte boundaries; may miss images. Still reads the entire source.",
+                "السريع: يفحص بدايات قطاعات 512 بايت وقد يفوّت صورًا. يقرأ المصدر كاملًا أيضًا.")
+            : T("Deep: checks every byte position. More thorough, but does not reconstruct fragmented images.",
+                "العميق: يفحص كل موضع بايت. أشمل، لكنه لا يعيد تجميع الصور المجزأة.");
+    }
+
+    private void Pause_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pause is null || !_busy) return;
+        if (_pause.IsPauseRequested)
+        {
+            _pause.Resume();
+            _state = "scanning";
+            PauseButton.Content = T("Pause", "إيقاف مؤقت");
+        }
+        else
+        {
+            _pause.Pause();
+            _state = "pausing";
+            PauseButton.Content = T("Resume", "متابعة");
+        }
+        UpdateStatus();
+    }
+
+    private void CopyPath_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(DestinationPathBox.Text)) return;
+        try { Clipboard.SetText(DestinationPathBox.Text); }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
+    private void Sort_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_ready) ApplySort();
+    }
+
+    private void Direction_Click(object sender, RoutedEventArgs e)
+    {
+        _descending = !_descending;
+        ApplySort();
+        DirectionButton.Content = _descending ? T("Descending ↓", "تنازلي ↓") : T("Ascending ↑", "تصاعدي ↑");
+    }
+
+    private void ApplySort()
+    {
+        string property = SortSelector.SelectedIndex switch
+        {
+            1 => nameof(RecoveredImage.Bytes),
+            2 => nameof(RecoveredImage.FileType),
+            _ => nameof(RecoveredImage.FileName)
+        };
+        var view = CollectionViewSource.GetDefaultView(_files);
+        using (view.DeferRefresh())
+        {
+            view.SortDescriptions.Clear();
+            view.SortDescriptions.Add(new SortDescription(property,
+                _descending ? ListSortDirection.Descending : ListSortDirection.Ascending));
+        }
+    }
+
+    private void Results_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_ready) RenameButton.IsEnabled = !_busy && _output is not null &&
+            ResultsGrid.SelectedItem is RecoveredImage;
+    }
+
+    private void Rename_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy || _output is null || ResultsGrid.SelectedItem is not RecoveredImage item) return;
+        var dialog = new Window
+        {
+            Owner = this, Title = T("Rename image", "تغيير اسم الصورة"),
+            Width = 460, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = (Brush)Resources["Card"], Foreground = (Brush)Resources["Text"],
+            FlowDirection = _arabic ? FlowDirection.RightToLeft : FlowDirection.LeftToRight
+        };
+        var layout = new StackPanel { Margin = new Thickness(22) };
+        layout.Children.Add(new TextBlock
+        {
+            Text = T("New name, without the extension:", "الاسم الجديد دون الامتداد:"),
+            Margin = new Thickness(0, 0, 0, 12)
+        });
+        var input = new TextBox
+        {
+            Text = Path.GetFileNameWithoutExtension(item.FileName), MaxLength = 80,
+            FlowDirection = FlowDirection.LeftToRight, Padding = new Thickness(10),
+            Foreground = Brushes.Black, Background = Brushes.White
+        };
+        layout.Children.Add(input);
+        layout.Children.Add(new TextBlock
+        {
+            Text = T("Only the filename changes; image bytes stay unchanged.", "يتغير الاسم فقط؛ تبقى بايتات الصورة دون تغيير."),
+            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 12)
+        });
+        var save = new Button { Content = T("Save", "حفظ"), IsDefault = true, Padding = new Thickness(16, 8, 16, 8) };
+        save.Click += (_, _) =>
+        {
+            try
+            {
+                var renamed = ResultFiles.Rename(_output, item, input.Text.Trim());
+                int index = _files.IndexOf(item);
+                _files[index] = renamed;
+                ResultsGrid.SelectedItem = renamed;
+                dialog.DialogResult = true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(dialog, T("Rename failed. Check the name and choose a unique filename.",
+                    "تعذر تغيير الاسم. تحقق من صلاحيته وعدم وجود صورة بالاسم نفسه.") + "\n\n" + ex.Message,
+                    "ImageRescue", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        };
+        layout.Children.Add(save);
+        dialog.Content = layout;
+        dialog.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
+        dialog.ShowDialog();
+    }
+
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
         _cancellation?.Cancel();
+        PauseButton.IsEnabled = false;
         CancelButton.IsEnabled = false;
         _state = "cancelling";
         UpdateStatus();
@@ -253,8 +427,10 @@ public partial class MainWindow : Window
     {
         _busy = busy;
         DeviceSelector.IsEnabled = RefreshButton.IsEnabled = BrowseButton.IsEnabled =
-            FolderButton.IsEnabled = ScanButton.IsEnabled = !busy;
+            FolderButton.IsEnabled = ScanButton.IsEnabled = ModeSelector.IsEnabled = PrefixBox.IsEnabled = !busy;
         CancelButton.IsEnabled = busy && _cancellation is not null;
+        PauseButton.IsEnabled = busy && _pause is not null;
+        RenameButton.IsEnabled = !busy && ResultsGrid.SelectedItem is RecoveredImage && _output is not null;
         OpenOutputButton.IsEnabled = !busy && _output is not null && Directory.Exists(_output);
     }
 
@@ -267,6 +443,8 @@ public partial class MainWindow : Window
             "noDevices" => T("No supported USB/SD volumes found. Connect one and refresh; if needed, run as administrator.", "لم يُعثر على قسم USB أو SD مدعوم. وصّل الفلاش واضغط تحديث الأجهزة؛ شغّل كمسؤول عند الحاجة."),
             "scanning" => T($"Scanning {ScanProgress.Value:F1}% — {_files.Count} images saved", $"جارٍ الفحص {ScanProgress.Value:F1}% — تم حفظ {_files.Count} صورة"),
             "cancelling" => T("Cancelling… completed images will be kept.", "جارٍ الإلغاء… ستبقى الصور المكتملة محفوظة."),
+            "pausing" => T("Pausing at the next safe checkpoint…", "جارٍ الإيقاف عند أقرب نقطة آمنة…"),
+            "paused" => T($"Paused — {_files.Count} images saved. Resume or cancel.", $"متوقف مؤقتًا — تم حفظ {_files.Count} صورة. يمكنك المتابعة أو الإلغاء."),
             "completed" => T($"Completed — {_files.Count} images. Open the results folder.", $"اكتمل الفحص — {_files.Count} صورة. افتح مجلد النتائج."),
             "cancelled" => T($"Cancelled — {_files.Count} completed images kept.", $"أُلغي الفحص — حُفظت {_files.Count} صورة مكتملة."),
             "limit" => T("Stopped at the 10,000-image limit. See the session report.", "توقف عند حد 10,000 صورة. راجع تقرير الجلسة."),

@@ -1,0 +1,16 @@
+name: Build and recovery checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build Windows application
+        run: dotnet build src/ImageRescue.App -c Release
+      - name: Run byte-integrity and malformed-input checks
+        run: dotnet run --project tests/ImageRescue.CoreTests -c Release

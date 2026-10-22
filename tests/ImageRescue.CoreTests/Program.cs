@@ -3,6 +3,8 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Buffers.Binary;
 using System.IO.Compression;
+using ImageRescue.App.Presentation;
+using System.Diagnostics;
 
 string work = Path.Combine(Path.GetTempPath(), "ImageRescueTests_" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(work);
@@ -71,6 +73,12 @@ try
             actualFile.FileName)).SequenceEqual(original), "Real image exact-byte match: " + testName);
         Check(SHA256.HashData(container).SequenceEqual(before), "Source unchanged: " + testName);
         Check(actualFile.Width == 23 && actualFile.Height == 17, "Pixel dimensions: " + testName);
+        if (testName.StartsWith("camera-exif"))
+        {
+            Check(actualFile.Camera == "Canon EOS Test", "Camera EXIF: " + testName);
+            Check(actualFile.DateTaken == "2026-10-22 12:34:56", "Capture date EXIF: " + testName);
+        }
+        else Check(actualFile.Camera is null && actualFile.DateTaken is null, "Missing EXIF is not invented: " + testName);
     }
     byte[] modesData = new byte[4096];
     png.CopyTo(modesData, 512);
@@ -128,6 +136,153 @@ try
     catch (IOException) { collision = true; }
     Check(collision && File.ReadAllText(Path.Combine(renameFolder, "taken.jpg")) == "untouched",
         "Rename never overwrites an existing image");
+
+    byte[] catalogueData = [..png, ..jpeg, ..png];
+    string catalogueFolder = Path.Combine(work, "catalogue");
+    using (var stream = new MemoryStream(catalogueData))
+    {
+        var catalogue = Carver.Scan(stream, "catalogue", catalogueFolder, null, null, default,
+            options: new(SaveAll: false));
+        Check(catalogue.Files.Count == 3 && catalogue.Files.All(f => !f.IsSaved), "Selection scan produces unsaved catalogue entries");
+        Check(Directory.GetFiles(catalogueFolder).Select(Path.GetFileName).SequenceEqual(new[] { "scan-session.json" }),
+            "No unselected images are written to disk");
+        var selected = catalogue.Files[1];
+        var renamedCatalogue = ResultFiles.Rename(catalogueFolder, selected, "chosen");
+        Check(!File.Exists(Path.Combine(catalogueFolder, "chosen.jpg")), "Renaming an unsaved entry does not write image data");
+        var savedReport = ResultFiles.SaveSelected(stream, catalogueFolder, [renamedCatalogue], default);
+        Check(savedReport.Files.Count(f => f.IsSaved) == 1, "Only selected image is saved");
+        Check(File.ReadAllBytes(Path.Combine(catalogueFolder, "chosen.jpg")).SequenceEqual(jpeg), "Selected export matches original bytes");
+        Check(Directory.GetFiles(catalogueFolder, "*.png").Length == 0, "Unselected PNGs remain unwritten");
+        Check(ResultFiles.LoadReport(catalogueFolder).Files.Count(f => f.IsSaved) == 1, "Selected export updates session report");
+        ResultFiles.SaveSelected(stream, catalogueFolder, [savedReport.Files[1]], default);
+        Check(Directory.GetFiles(catalogueFolder, "*.jpg").Length == 1, "Already-saved selection is idempotent");
+    }
+    using (var stream = new MemoryStream(catalogueData))
+    {
+        var onlyPng = Carver.Scan(stream, "png-only", Path.Combine(work, "png-only"), null, null,
+            default, options: new(Jpeg: false));
+        Check(onlyPng.Files.Count == 2 && onlyPng.Files.All(f => f.FileType == "PNG"), "PNG-only scan excludes JPEG");
+    }
+    using (var stream = new MemoryStream(catalogueData))
+    {
+        var onlyJpeg = Carver.Scan(stream, "jpeg-only", Path.Combine(work, "jpeg-only"), null, null,
+            default, options: new(Png: false));
+        Check(onlyJpeg.Files.Count == 1 && onlyJpeg.Files[0].FileType == "JPG", "JPEG-only scan excludes PNG");
+    }
+    using (var stream = new MemoryStream(catalogueData))
+    {
+        bool rejected = false;
+        try { Carver.Scan(stream, "no-type", Path.Combine(work, "no-type"), null, null, default, options: new(false, false)); }
+        catch (ArgumentException) { rejected = true; }
+        Check(rejected && !Directory.Exists(Path.Combine(work, "no-type")), "No-type scan rejected before output creation");
+    }
+    string changedFolder = Path.Combine(work, "changed-source");
+    using (var stream = new MemoryStream(catalogueData))
+    {
+        var catalogue = Carver.Scan(stream, "changed", changedFolder, null, null, default, options: new(SaveAll: false));
+        byte[] altered = (byte[])catalogueData.Clone(); altered[45] ^= 1;
+        using var changed = new MemoryStream(altered);
+        bool rejected = false;
+        try { ResultFiles.SaveSelected(changed, changedFolder, [catalogue.Files[0]], default); }
+        catch (IOException) { rejected = true; }
+        Check(rejected, "Changed source detected by hash before committing export");
+        Check(Directory.GetFiles(changedFolder, "*.png").Length == 0 && Directory.GetFiles(changedFolder, "*.part").Length == 0,
+            "Hash-mismatched image and partial file are discarded");
+        Check(ResultFiles.LoadReport(changedFolder).Files.All(f => !f.IsSaved), "Changed source does not mark an image saved");
+        var recovered = ResultFiles.SaveSelected(changed, changedFolder, [catalogue.Files[0]], default, allowChanged: true).Files[0];
+        byte[] savedBytes = File.ReadAllBytes(Path.Combine(changedFolder, recovered.FileName));
+        Check(recovered.IsSaved && recovered.SourceChanged, "Changed image saved and flagged when allowed");
+        Check(savedBytes.SequenceEqual(altered.Skip((int)recovered.Offset).Take((int)recovered.Bytes)), "Changed export preserves exact current bytes");
+        Check(recovered.ScannedSha256 == catalogue.Files[0].Sha256 && recovered.Sha256 == Convert.ToHexString(SHA256.HashData(savedBytes)), "Report retains scanned and actual saved hashes");
+        Check(ResultFiles.LoadReport(changedFolder).Files[0] == recovered, "Changed state persists in session report");
+    }
+    string batchFolder = Path.Combine(work, "batch");
+    var batchReport = Run(catalogueData, "batch");
+    var batch = ResultFiles.RenameBatch(batchFolder, batchReport.Files, "Trip");
+    Check(batch.Select(f => f.FileName).SequenceEqual(new[] { "Trip_001.png", "Trip_002.jpg", "Trip_003.png" }), "Sequential batch names follow selected order");
+    Check(batch.All(f => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combine(batchFolder, f.FileName)))) == f.Sha256),
+        "Batch rename preserves all image bytes");
+    Check(ResultFiles.LoadReport(batchFolder).Files.Select(f => f.FileName).SequenceEqual(batch.Select(f => f.FileName)), "Batch rename updates all session names");
+    var reversed = ResultFiles.RenameBatch(batchFolder, batch.AsEnumerable().Reverse().ToList(), "Trip");
+    Check(reversed.All(f => File.Exists(Path.Combine(batchFolder, f.FileName))), "Batch rename handles name cycles with temporary staging");
+    File.WriteAllText(Path.Combine(batchFolder, "Blocked_002.jpg"), "keep");
+    bool batchCollision = false;
+    try { ResultFiles.RenameBatch(batchFolder, reversed.AsEnumerable().Reverse().ToList(), "Blocked"); }
+    catch (IOException) { batchCollision = true; }
+    Check(batchCollision && reversed.All(f => File.Exists(Path.Combine(batchFolder, f.FileName))), "Batch collision rejected before moving any files");
+    Check(File.ReadAllText(Path.Combine(batchFolder, "Blocked_002.jpg")) == "keep", "Batch collision never overwrites other data");
+
+    string settingsPath = Path.Combine(work, "settings", "settings.json");
+    var preferences = new Preferences("zh-Hans", "soft", @"C:\Pictures\اختبار");
+    Check(PreferenceStore.Save(preferences, settingsPath), "Preferences saved atomically");
+    Check(PreferenceStore.Load(settingsPath) == preferences, "Language, appearance and Unicode destination persist");
+    File.WriteAllText(settingsPath, "{broken");
+    Check(PreferenceStore.Load(settingsPath) == new Preferences(), "Corrupt preferences fall back to defaults");
+    File.WriteAllText(settingsPath, "{\"Language\":\"invalid\",\"Theme\":\"invalid\",\"Destination\":null}");
+    Check(PreferenceStore.Load(settingsPath) == new Preferences(), "Unsupported stored preferences normalized");
+    Check(PreferenceStore.Load(settingsPath + ".missing") == new Preferences(), "Missing preferences handled");
+    var localeFiles = Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "Languages"), "*.json");
+    Check(localeFiles.Length == 10, "Ten language files delivered");
+    var english = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(localeFiles.Single(f => Path.GetFileName(f) == "en.json")))!;
+    foreach (var locale in localeFiles)
+    {
+        var dictionary = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(locale))!;
+        Check(dictionary.Keys.Order().SequenceEqual(english.Keys.Order()) && dictionary.Values.All(v => !string.IsNullOrWhiteSpace(v)),
+            "Complete localization: " + Path.GetFileName(locale));
+    }
+    foreach (byte[] malformed in new[] { Array.Empty<byte>(), new byte[2], new byte[16], new byte[] { 73, 73, 42, 0, 255, 255, 255, 255 } })
+        Check(PhotoMetadata.ParseTiff(malformed) == new PhotoInfo(), "Malformed TIFF metadata handled");
+    using (var pause = new PauseController())
+    {
+        pause.Pause(); Thread.Sleep(30); double beforeResume = pause.PausedSeconds; pause.Resume();
+        Check(beforeResume > 0 && pause.PausedSeconds >= beforeResume, "Paused duration tracked for speed and ETA");
+        double stopped = pause.PausedSeconds; Thread.Sleep(15);
+        Check(pause.PausedSeconds == stopped, "Active scan time does not accumulate as paused time");
+    }
+    string partialFolder = Path.Combine(work, "partial-selected");
+    using (var stream = new MemoryStream(catalogueData))
+    using (var cancel = new CancellationTokenSource())
+    {
+        var catalogue = Carver.Scan(stream, "partial-selected", partialFolder, null, null,
+            default, options: new(SaveAll: false));
+        bool cancelled = false;
+        try
+        {
+            ResultFiles.SaveSelected(stream, partialFolder, catalogue.Files, cancel.Token,
+                new InlineProgress<RecoveredImage>(_ => cancel.Cancel()));
+        }
+        catch (OperationCanceledException) { cancelled = true; }
+        Check(cancelled, "Selective export responds to cancellation between images");
+        Check(ResultFiles.LoadReport(partialFolder).Files.Count(f => f.IsSaved) == 1,
+            "Cancelled selective export records the one completed image");
+        Check(Directory.GetFiles(partialFolder, "*.png").Length == 1 && Directory.GetFiles(partialFolder, "*.jpg").Length == 0,
+            "Cancelled selective export keeps only completed output");
+        Check(Directory.GetFiles(partialFolder, "*.part").Length == 0, "Cancelled selective export leaves no partial files");
+    }
+    byte[] littleExif = new byte[100];
+    littleExif[0] = littleExif[1] = (byte)'I';
+    BinaryPrimitives.WriteUInt16LittleEndian(littleExif.AsSpan(2), 42);
+    BinaryPrimitives.WriteUInt32LittleEndian(littleExif.AsSpan(4), 8);
+    BinaryPrimitives.WriteUInt16LittleEndian(littleExif.AsSpan(8), 3);
+    LittleEntry(10, 0x010F, 2, 5, 70);
+    LittleEntry(22, 0x0110, 2, 4, 0);
+    "Cam\0"u8.CopyTo(littleExif.AsSpan(30));
+    LittleEntry(34, 0x8769, 4, 1, 50);
+    BinaryPrimitives.WriteUInt16LittleEndian(littleExif.AsSpan(50), 1);
+    LittleEntry(52, 0x9003, 2, 20, 80);
+    "Acme\0"u8.CopyTo(littleExif.AsSpan(70));
+    "2026:10:22 01:02:03\0"u8.CopyTo(littleExif.AsSpan(80));
+    var littleInfo = PhotoMetadata.ParseTiff(littleExif);
+    Check(littleInfo.Camera == "Acme Cam", "Little-endian TIFF handles inline and offset camera strings");
+    Check(littleInfo.DateTaken == "2026-10-22 01:02:03", "Little-endian EXIF sub-IFD capture date read correctly");
+    void LittleEntry(int p, ushort tag, ushort type, uint count, uint value)
+    {
+        BinaryPrimitives.WriteUInt16LittleEndian(littleExif.AsSpan(p), tag);
+        BinaryPrimitives.WriteUInt16LittleEndian(littleExif.AsSpan(p + 2), type);
+        BinaryPrimitives.WriteUInt32LittleEndian(littleExif.AsSpan(p + 4), count);
+        BinaryPrimitives.WriteUInt32LittleEndian(littleExif.AsSpan(p + 8), value);
+    }
+    AdditionalFormatTests.Run(work, Check);
     Console.WriteLine($"PASS: {checks} checks");
 }
 finally { Directory.Delete(work, true); }
@@ -178,4 +333,8 @@ sealed class ChunkedStream(byte[] data) : MemoryStream(data)
 sealed class BrokenStream(byte[] data) : MemoryStream(data)
 {
     public override int Read(byte[] buffer, int offset, int count) => throw new IOException("Synthetic media error");
+}
+sealed class InlineProgress<T>(Action<T> callback) : IProgress<T>
+{
+    public void Report(T value) => callback(value);
 }

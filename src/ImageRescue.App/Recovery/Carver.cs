@@ -7,21 +7,55 @@ using System.Text.Json;
 namespace ImageRescue.App.Recovery;
 
 public sealed record RecoveredImage(string FileName, string FileType, long Bytes,
-    long Offset, string Sha256, int Width = 0, int Height = 0)
+    long Offset, string Sha256, int Width = 0, int Height = 0,
+    string? Camera = null, string? DateTaken = null, bool IsSaved = true, string? ScannedSha256 = null, bool SourceChanged = false, string? RecoveryNote = null)
 {
     public string FileSize => $"{Bytes:N0} B ({Bytes / 1048576d:N2} MiB)";
-    public string Dimensions => $"{Width} × {Height}";
+    public string Dimensions => Width > 0 && Height > 0 ? $"{Width} × {Height}" : "—";
 }
 
 public enum ScanMode { Quick, Deep }
+public sealed record ScanOptions(bool Jpeg = true, bool Png = true, bool SaveAll = true,
+    bool OtherImages = false, bool Pdf = false, bool Office = false,
+    bool Video = false, bool Audio = false, bool Archives = false, bool Raw = false)
+{
+    public bool Any => Jpeg || Png || OtherImages || Pdf || Office || Video || Audio || Archives || Raw;
+    public bool Additional => OtherImages || Pdf || Office || Video || Audio || Archives || Raw;
+}
 
 public sealed class PauseController : IDisposable
 {
     private readonly ManualResetEventSlim _gate = new(true);
+    private readonly object _sync = new();
+    private long _pausedTicks, _pauseStarted;
     public Action? Paused { get; set; }
     public bool IsPauseRequested => !_gate.IsSet;
-    public void Pause() => _gate.Reset();
-    public void Resume() => _gate.Set();
+    public void Pause()
+    {
+        lock (_sync)
+        {
+            if (!_gate.IsSet) return;
+            _pauseStarted = Stopwatch.GetTimestamp();
+            _gate.Reset();
+        }
+    }
+    public void Resume()
+    {
+        lock (_sync)
+        {
+            if (_gate.IsSet) return;
+            _pausedTicks += Stopwatch.GetTimestamp() - _pauseStarted;
+            _gate.Set();
+        }
+    }
+    public double PausedSeconds
+    {
+        get
+        {
+            lock (_sync) return (_pausedTicks + (_gate.IsSet ? 0 : Stopwatch.GetTimestamp() - _pauseStarted))
+                / (double)Stopwatch.Frequency;
+        }
+    }
     public void Checkpoint(CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
@@ -33,10 +67,11 @@ public sealed class PauseController : IDisposable
     public void Dispose() => _gate.Dispose();
 }
 
-public sealed record ScanUpdate(double Percent, long Scanned, int Found);
+public sealed record ScanUpdate(double Percent, long Scanned, int Found,
+    double MegabytesPerSecond = 0, double? RemainingSeconds = null);
 public sealed record ScanReport(string Source, long SourceBytes, string Scope,
     DateTime StartedUtc, DateTime FinishedUtc, string Outcome, long NextOffset,
-    List<RecoveredImage> Files, string Mode = "Deep");
+    List<RecoveredImage> Files, string Mode = "Deep", ScanOptions? Options = null);
 
 // The scanner is independent of WPF and can be tested with ordinary streams.
 public static class Carver
@@ -48,17 +83,21 @@ public static class Carver
     public static ScanReport Scan(Stream source, string sourceName, string destination,
         IProgress<ScanUpdate>? progress, IProgress<RecoveredImage>? found,
         CancellationToken cancellation, ScanMode mode = ScanMode.Deep,
-        PauseController? pause = null, string namePrefix = "image")
+        PauseController? pause = null, string namePrefix = "image", ScanOptions? options = null)
     {
+        options ??= new();
+        if (!options.Any) throw new ArgumentException("Choose at least one supported file type.");
         ResultFiles.ValidateBaseName(namePrefix);
         Directory.CreateDirectory(destination);
         var started = DateTime.UtcNow;
         var files = new List<RecoveredImage>();
         var reader = new CachedReader(source, cancellation, pause);
-        var scanBuffer = new byte[1024 * 1024 + 7];
+        var scanBuffer = new byte[1024 * 1024 + 15];
         long position = 0;
         string outcome = "Completed";
         var watch = Stopwatch.StartNew();
+        var elapsed = Stopwatch.StartNew();
+        double initialPausedSeconds = pause?.PausedSeconds ?? 0;
         Exception? failure = null;
         try
         {
@@ -70,7 +109,7 @@ public static class Carver
                 int count = ReadSome(source, scanBuffer, wanted);
                 if (count == 0) throw new EndOfStreamException("Unexpected end of source.");
 
-                // Seven bytes overlap protects PNG signatures crossing a scan block.
+                // Fifteen bytes overlap protects container headers crossing a scan block.
                 int step = Math.Min(1024 * 1024, count);
                 long next = position + step;
                 int stride = mode == ScanMode.Quick ? 512 : 1;
@@ -78,23 +117,29 @@ public static class Carver
                 for (int i = initial; i < step; i += stride)
                 {
                     if ((i & 4095) == 0) Checkpoint();
-                    bool png = i + 8 <= count &&
+                    bool png = options.Png && i + 8 <= count &&
                         scanBuffer.AsSpan(i, 8).SequenceEqual(PngSignature);
-                    bool jpg = i + 3 <= count && scanBuffer[i] == 255 &&
+                    bool jpg = options.Jpeg && i + 3 <= count && scanBuffer[i] == 255 &&
                         scanBuffer[i + 1] == 216 && scanBuffer[i + 2] == 255;
-                    if (!png && !jpg) continue;
-
                     long start = position + i;
-                    long end = png ? PngEnd(reader, start) : JpegEnd(reader, start);
+                    AdditionalFormats.Match? extra = !png && !jpg && options.Additional
+                        ? AdditionalFormats.Detect(reader, start, scanBuffer.AsSpan(i, Math.Min(16, count - i)), options) : null;
+                    if (!png && !jpg && extra is null) continue;
+                    long end = png ? PngEnd(reader, start) : jpg ? JpegEnd(reader, start) : extra!.End;
                     if (end <= start) continue;
 
-                    string extension = png ? "png" : "jpg";
+                    string extension = png ? "png" : jpg ? "jpg" : extra!.Extension;
                     string name = $"{namePrefix}_{start:X16}.{extension}";
-                    var dimensions = Dimensions(reader, start, png);
-                    string hash = Export(source, start, end - start,
-                        Path.Combine(destination, name), cancellation, pause);
+                    var dimensions = png || jpg ? Dimensions(reader, start, png) : (Width: 0, Height: 0);
+                    var metadata = png || jpg ? PhotoMetadata.Read(reader, start, end, png) : new PhotoInfo();
+                    string hash = options.SaveAll
+                        ? Export(source, start, end - start, Path.Combine(destination, name), cancellation, pause)
+                        : HashRange(source, start, end - start, cancellation, pause);
                     var item = new RecoveredImage(name, extension.ToUpperInvariant(),
-                        end - start, start, hash, dimensions.Width, dimensions.Height);
+                        end - start, start, hash, dimensions.Width, dimensions.Height,
+                        metadata.Camera, metadata.DateTaken, options.SaveAll, RecoveryNote: extra is null ? null
+                            : extension is "cr2" or "dng" or "tif" ? "RawBoundary"
+                            : extension == "pdf" ? "PdfBoundary" : "ContainerBoundary");
                     files.Add(item);
                     found?.Report(item);
                     if (files.Count >= 10000)
@@ -116,8 +161,7 @@ public static class Carver
                 position = next;
                 if (watch.ElapsedMilliseconds >= 150)
                 {
-                    progress?.Report(new(100d * position / Math.Max(1, source.Length),
-                        position, files.Count));
+                    ReportProgress();
                     watch.Restart();
                 }
             }
@@ -133,15 +177,25 @@ public static class Carver
         ScanReport Finish()
         {
             var result = new ScanReport(sourceName, source.Length,
-                "Signature carving: existing and deleted contiguous images; not deleted-only. " +
-                "Structure checked, not a guarantee of pixel integrity. Maximum image: 64 MiB.",
-                started, DateTime.UtcNow, outcome, position, files, mode.ToString());
+                "Signature carving: existing and deleted contiguous files; not deleted-only. " +
+                "Boundaries checked, not a decode guarantee. JPEG/PNG: 64 MiB; other files: 512 MiB. RAW is experimental; PDF first revision only; ZIP64 and fragmented files unsupported.",
+                started, DateTime.UtcNow, outcome, position, files, mode.ToString(), options);
             string reportPath = Path.Combine(destination, "scan-session.json");
             File.WriteAllText(reportPath, JsonSerializer.Serialize(result,
                 new JsonSerializerOptions { WriteIndented = true }));
-            progress?.Report(new(outcome == "Completed" ? 100 :
-                Math.Min(100, 100d * position / Math.Max(1, source.Length)), position, files.Count));
+            ReportProgress();
             return result;
+        }
+
+        void ReportProgress()
+        {
+            double pausedDuringScan = Math.Max(0, (pause?.PausedSeconds ?? 0) - initialPausedSeconds);
+            double seconds = Math.Max(0.001, elapsed.Elapsed.TotalSeconds - pausedDuringScan);
+            double speed = position / seconds;
+            double? eta = seconds >= 1 && position > 0 && speed > 0
+                ? Math.Max(0, source.Length - position) / speed : null;
+            progress?.Report(new(Math.Min(100, 100d * position / Math.Max(1, source.Length)),
+                position, files.Count, speed / 1_000_000d, eta));
         }
 
         void Checkpoint()
@@ -299,8 +353,8 @@ public static class Carver
         return -1;
     }
 
-    private static string Export(Stream source, long start, long size, string path,
-        CancellationToken cancellation, PauseController? pause)
+    public static string Export(Stream source, long start, long size, string path,
+        CancellationToken cancellation, PauseController? pause = null, string? expectedHash = null, bool allowChanged = false)
     {
         string temporary = path + ".part";
         bool created = false;
@@ -324,14 +378,35 @@ public static class Carver
                     remaining -= n;
                 }
             }
+            string digest = Convert.ToHexString(hash.GetHashAndReset());
+            if (!allowChanged && expectedHash is not null && !digest.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
+                throw new IOException("Source image changed since the scan. The unverified export was discarded.");
             File.Move(temporary, path, false);
-            return Convert.ToHexString(hash.GetHashAndReset());
+            return digest;
         }
         catch
         {
             if (created && File.Exists(temporary)) File.Delete(temporary);
             throw;
         }
+    }
+
+    private static string HashRange(Stream source, long start, long size,
+        CancellationToken token, PauseController? pause)
+    {
+        if (start < 0 || size < 0 || start > source.Length - size) throw new IOException("Invalid source range.");
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        source.Position = start;
+        byte[] buffer = new byte[1024 * 1024];
+        while (size > 0)
+        {
+            token.ThrowIfCancellationRequested(); pause?.Checkpoint(token);
+            int n = source.Read(buffer, 0, (int)Math.Min(size, buffer.Length));
+            if (n == 0) throw new EndOfStreamException();
+            hash.AppendData(buffer, 0, n);
+            size -= n;
+        }
+        return Convert.ToHexString(hash.GetHashAndReset());
     }
 
     private static int ReadSome(Stream stream, byte[] buffer, int count)

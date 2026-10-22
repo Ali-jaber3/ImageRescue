@@ -11,6 +11,6 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Build Windows application
-        run: dotnet build src/ImageRescue.App -c Release
+        run: dotnet build src/ImageRescue.App/ImageRescue.App.csproj -c Release
       - name: Run byte-integrity and malformed-input checks
-        run: dotnet run --project tests/ImageRescue.CoreTests -c Release
+        run: dotnet run --project tests/ImageRescue.CoreTests/ImageRescue.CoreTests.csproj -c Release

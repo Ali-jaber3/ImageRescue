@@ -1,0 +1,75 @@
+ .github/workflows/build.yml                        |    4 [32m+[m[31m-[m
+ .github/workflows/release-build.yml                |   30 [32m+[m
+ Build-Release.ps1                                  |   37 [32m+[m
+ Create-Test-IMG.cmd                                |    3 [32m+[m
+ Install-Update.ps1                                 |   57 [32m+[m
+ README.md                                          |  130 [32m+[m[31m-[m
+ Test-And-Run.cmd                                   |    3 [32m+[m
+ Test-And-Run.ps1                                   |   11 [32m+[m
+ Update-Source.cmd                                  |    4 [32m+[m
+ docs/CHANGED-HASH-AR.md                            |   30 [32m+[m
+ docs/FORMAT-SUPPORT.md                             |   31 [32m+[m
+ docs/RELEASE-NOTES.md                              |   10 [32m+[m
+ docs/START_AR.md                                   |   90 [32m+[m[31m-[m
+ docs/THIRD-PARTY.md                                |   12 [32m+[m
+ docs/USER-GUIDE.md                                 |   21 [32m+[m
+ docs/VERIFICATION.md                               |   17 [32m+[m
+ docs/licenses/DOTNET-LICENSE.txt                   |   23 [32m+[m
+ docs/licenses/DOTNET-THIRD-PARTY-NOTICES.txt       | 1451 [32m++++++++++++++++++++[m
+ docs/licenses/WPF-THIRD-PARTY-NOTICES.txt          |   62 [32m+[m
+ ...t recovery and improved appearance\357\200\242" |   74 [32m+[m
+ installer/ImageRescue.nsi                          |  165 [32m+++[m
+ installer/UninstallFiles.nsh                       |  420 [32m++++++[m
+ src/ImageRescue.App/App.xaml                       |    2 [32m+[m[31m-[m
+ src/ImageRescue.App/Assets/ImageRescue.ico         |  Bin [31m0[m -> [32m56714[m bytes
+ src/ImageRescue.App/Assets/ImageRescue.png         |  Bin [31m0[m -> [32m37412[m bytes
+ src/ImageRescue.App/Assets/ImageRescue.svg         |    9 [32m+[m
+ src/ImageRescue.App/Assets/Languages/ar.json       |   95 [32m++[m
+ src/ImageRescue.App/Assets/Languages/de.json       |   95 [32m++[m
+ src/ImageRescue.App/Assets/Languages/en.json       |   95 [32m++[m
+ src/ImageRescue.App/Assets/Languages/es.json       |   95 [32m++[m
+ src/ImageRescue.App/Assets/Languages/fr.json       |   95 [32m++[m
+ src/ImageRescue.App/Assets/Languages/hi.json       |   95 [32m++[m
+ src/ImageRescue.App/Assets/Languages/ja.json       |   95 [32m++[m
+ src/ImageRescue.App/Assets/Languages/pt.json       |   95 [32m++[m
+ src/ImageRescue.App/Assets/Languages/ru.json       |   95 [32m++[m
+ src/ImageRescue.App/Assets/Languages/zh-Hans.json  |   95 [32m++[m
+ src/ImageRescue.App/ImageRescue.App.csproj         |    8 [32m+[m[31m-[m
+ src/ImageRescue.App/MainWindow.xaml                |  261 [32m++[m[31m--[m
+ src/ImageRescue.App/MainWindow.xaml.cs             |  652 [32m+++++[m[31m----[m
+ src/ImageRescue.App/Presentation/ImageRow.cs       |   32 [32m+[m
+ src/ImageRescue.App/Presentation/Localizer.cs      |   33 [32m+[m
+ src/ImageRescue.App/Presentation/Preferences.cs    |   50 [32m+[m
+ src/ImageRescue.App/Recovery/AdditionalFormats.cs  |  277 [32m++++[m
+ src/ImageRescue.App/Recovery/Carver.cs             |  133 [32m+[m[31m-[m
+ src/ImageRescue.App/Recovery/PhotoMetadata.cs      |  101 [32m++[m
+ src/ImageRescue.App/Recovery/ResultFiles.cs        |  143 [32m+[m[31m-[m
+ .../ImageRescue.CoreTests/AdditionalFormatTests.cs |   70 [32m+[m
+ .../ImageRescue.CoreTests/Fixtures/camera-exif.jpg |  Bin [31m0[m -> [32m1149[m bytes
+ .../ImageRescue.CoreTests/Fixtures/camera-exif.png |  Bin [31m0[m -> [32m1273[m bytes
+ .../Fixtures/formats/README.md                     |   13 [32m+[m
+ .../Fixtures/formats/sample.avi                    |  Bin [31m0[m -> [32m6122[m bytes
+ .../Fixtures/formats/sample.bmp                    |  Bin [31m0[m -> [32m1350[m bytes
+ .../Fixtures/formats/sample.cr2                    |  Bin [31m0[m -> [32m128[m bytes
+ .../Fixtures/formats/sample.dng                    |  Bin [31m0[m -> [32m128[m bytes
+ .../Fixtures/formats/sample.doc                    |  Bin [31m0[m -> [32m1536[m bytes
+ .../Fixtures/formats/sample.docx                   |  Bin [31m0[m -> [32m36591[m bytes
+ .../Fixtures/formats/sample.gif                    |  Bin [31m0[m -> [32m74[m bytes
+ .../Fixtures/formats/sample.m4a                    |  Bin [31m0[m -> [32m3780[m bytes
+ .../Fixtures/formats/sample.mov                    |  Bin [31m0[m -> [32m1721[m bytes
+ .../Fixtures/formats/sample.mp3                    |  Bin [31m0[m -> [32m2943[m bytes
+ .../Fixtures/formats/sample.mp4                    |  Bin [31m0[m -> [32m1774[m bytes
+ .../Fixtures/formats/sample.pdf                    |   68 [32m+[m
+ .../Fixtures/formats/sample.ppt                    |  Bin [31m0[m -> [32m1536[m bytes
+ .../Fixtures/formats/sample.pptx                   |  Bin [31m0[m -> [32m28104[m bytes
+ .../Fixtures/formats/sample.tif                    |  Bin [31m0[m -> [32m1436[m bytes
+ .../Fixtures/formats/sample.wav                    |  Bin [31m0[m -> [32m26538[m bytes
+ .../Fixtures/formats/sample.webp                   |  Bin [31m0[m -> [32m76[m bytes
+ .../Fixtures/formats/sample.xls                    |  Bin [31m0[m -> [32m1536[m bytes
+ .../Fixtures/formats/sample.xlsx                   |  Bin [31m0[m -> [32m4827[m bytes
+ .../Fixtures/formats/sample.zip                    |  Bin [31m0[m -> [32m150[m bytes
+ .../ImageRescue.CoreTests.csproj                   |    6 [32m+[m[31m-[m
+ tests/ImageRescue.CoreTests/Program.cs             |  159 [32m+++[m
+ tools/New-MultiFormatImage.ps1                     |   32 [32m+[m
+ tools/Write-UninstallList.ps1                      |   14 [32m+[m
+ 74 files changed, 5075 insertions(+), 623 deletions(-)

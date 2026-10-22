@@ -1,11 +1,49 @@
 <Window x:Class="ImageRescue.App.MainWindow"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="ImageRescue" Width="1100" Height="820" MinWidth="760" MinHeight="520"
+ Title="ImageRescue 0.4.0" Width="1200" Height="900" MinWidth="820" MinHeight="560"
+ WindowStartupLocation="CenterScreen" Closing="Window_Closing"
+ SourceInitialized="Window_SourceInitialized" Icon="Assets/ImageRescue.png"
  Background="{DynamicResource Page}" Foreground="{DynamicResource Text}"
- FontFamily="Segoe UI" FontSize="14" WindowStartupLocation="CenterScreen"
- Closing="Window_Closing">
+ FontFamily="Segoe UI, Microsoft YaHei UI, Yu Gothic UI, Nirmala UI" FontSize="14">
  <Window.Resources>
+  <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource Text}"/></Style>
+  <Style TargetType="CheckBox">
+   <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+   <Setter Property="Margin" Value="8"/>
+   <Setter Property="VerticalContentAlignment" Value="Center"/>
+   <Setter Property="Cursor" Value="Hand"/>
+   <Setter Property="ContentTemplate"><Setter.Value><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></Setter.Value></Setter>
+   <Setter Property="Template"><Setter.Value>
+    <ControlTemplate TargetType="CheckBox">
+     <Grid Background="Transparent">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <Border x:Name="TickFrame" Width="18" Height="18" CornerRadius="5" Background="{DynamicResource Field}" BorderBrush="{DynamicResource Line}" BorderThickness="1" VerticalAlignment="Center">
+       <Path x:Name="Tick" Data="M3,8 L6,11 L13,4" Stroke="{DynamicResource AccentText}" StrokeThickness="2" Visibility="Collapsed" Margin="1"/>
+      </Border>
+      <ContentPresenter Grid.Column="1" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+     </Grid>
+     <ControlTemplate.Triggers>
+      <Trigger Property="IsChecked" Value="True"><Setter TargetName="TickFrame" Property="Background" Value="{DynamicResource Accent}"/><Setter TargetName="Tick" Property="Visibility" Value="Visible"/></Trigger>
+      <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="TickFrame" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger>
+      <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="TickFrame" Property="BorderBrush" Value="{DynamicResource Accent}"/><Setter TargetName="TickFrame" Property="BorderThickness" Value="2"/></Trigger>
+      <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+     </ControlTemplate.Triggers>
+    </ControlTemplate>
+   </Setter.Value></Setter>
+  </Style>
+  <Style x:Key="SectionNumber" TargetType="Border">
+   <Setter Property="Background" Value="{DynamicResource Surface}"/>
+   <Setter Property="CornerRadius" Value="10"/>
+   <Setter Property="Width" Value="34"/><Setter Property="Height" Value="34"/>
+   <Setter Property="Margin" Value="0,0,12,0"/>
+  </Style>
+  <Style x:Key="Caption" TargetType="TextBlock">
+   <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
+   <Setter Property="FontSize" Value="12"/><Setter Property="Margin" Value="0,0,0,7"/>
+   <Setter Property="TextWrapping" Value="Wrap"/>
+  </Style>
+
   <Style TargetType="Button">
    <Setter Property="Background" Value="{DynamicResource Surface}"/>
    <Setter Property="Foreground" Value="{DynamicResource Text}"/>
@@ -34,6 +72,7 @@
    <Setter Property="Foreground" Value="{DynamicResource Text}"/>
    <Setter Property="Padding" Value="12"/>
    <Setter Property="Height" Value="44"/>
+   <Setter Property="VerticalContentAlignment" Value="Center"/>
    <Setter Property="Template"><Setter.Value>
     <ControlTemplate TargetType="TextBox">
      <Border Background="{TemplateBinding Background}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="11">
@@ -104,110 +143,168 @@
    <Setter Property="BorderThickness" Value="0"/>
   </Style>
  </Window.Resources>
- <!-- A bounded outer viewer fixes scrolling when the window is short. -->
- <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-  CanContentScroll="False" PanningMode="VerticalOnly">
-  <StackPanel x:Name="RootLayout" Margin="26">
-   <WrapPanel Margin="0,0,0,20">
-    <StackPanel Width="360" Margin="0,0,18,10">
-     <TextBlock Text="ImageRescue" FontSize="30" FontWeight="Bold"/>
-     <TextBlock x:Name="SubtitleText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+ <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+  <StackPanel x:Name="RootLayout" Margin="28">
+   <Grid Margin="0,0,0,24">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+     <Image Source="Assets/ImageRescue.png" Width="56" Height="56" Margin="0,0,14,0"/>
+     <StackPanel>
+      <StackPanel Orientation="Horizontal">
+       <TextBlock Text="ImageRescue" FontSize="28" FontWeight="Bold"/>
+       <Border Background="{DynamicResource Surface}" CornerRadius="8" Padding="8,3" Margin="10,8,0,0" VerticalAlignment="Top">
+        <TextBlock Text="0.4" Foreground="{DynamicResource Accent}" FontSize="11" FontWeight="Bold"/>
+       </Border>
+      </StackPanel>
+      <TextBlock Text="{DynamicResource L.Tagline}" Style="{StaticResource Caption}" MaxWidth="390"/>
+     </StackPanel>
     </StackPanel>
-    <StackPanel Margin="8,0,8,8">
-     <TextBlock x:Name="LanguageLabel" Margin="0,0,0,6" Foreground="{DynamicResource Muted}"/>
-     <ComboBox x:Name="LanguageSelector" Width="125" FlowDirection="LeftToRight" SelectionChanged="Language_Changed">
-      <ComboBoxItem Content="English"/><ComboBoxItem Content="العربية"/>
-     </ComboBox>
+    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+     <ComboBox x:Name="LanguageSelector" Width="170" FlowDirection="LeftToRight" SelectionChanged="Language_Changed" ToolTip="{DynamicResource L.Language}"/>
+     <Button x:Name="ThemeToggleButton" HorizontalAlignment="Right" Width="46" Height="42" Padding="10" Click="Theme_Click" Margin="0,8,0,0">
+      <Path x:Name="ThemeIcon" Stroke="{DynamicResource Text}" StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Stretch="Uniform" Width="22" Height="22"/>
+     </Button>
     </StackPanel>
-    <StackPanel Margin="8,0,0,8">
-     <TextBlock x:Name="ThemeLabel" Margin="0,0,0,6" Foreground="{DynamicResource Muted}"/>
-     <ComboBox x:Name="ThemeSelector" Width="145" FlowDirection="LeftToRight" SelectionChanged="Theme_Changed">
-      <ComboBoxItem x:Name="DarkThemeItem"/><ComboBoxItem x:Name="LightThemeItem"/><ComboBoxItem x:Name="GrayThemeItem"/>
-     </ComboBox>
-    </StackPanel>
-   </WrapPanel>
+   </Grid>
+
    <Border Style="{StaticResource CardStyle}">
-    <StackPanel>
-     <TextBlock x:Name="SetupTitle" FontSize="19" FontWeight="SemiBold" Margin="0,0,0,16"/>
-     <TextBlock x:Name="SourceLabel" Margin="0,0,0,8"/>
+    <StackPanel x:Name="SetupPanel">
+     <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+      <Border Style="{StaticResource SectionNumber}"><TextBlock Text="01" Foreground="{DynamicResource Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold"/></Border>
+      <StackPanel>
+       <TextBlock Text="{DynamicResource L.Source}" FontSize="19" FontWeight="SemiBold"/>
+       <TextBlock Text="{DynamicResource L.SourceHint}" Style="{StaticResource Caption}"/>
+      </StackPanel>
+     </StackPanel>
      <Grid>
-      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <ComboBox x:Name="DeviceSelector" MinWidth="220" SelectionChanged="Device_Changed"/>
-      <Button x:Name="RefreshButton" Grid.Column="1" Click="Refresh_Click"/>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <ComboBox x:Name="DeviceSelector" SelectionChanged="Device_Changed" VerticalAlignment="Center"/>
+      <Button Grid.Column="1" Content="{DynamicResource L.Refresh}" Click="Refresh_Click"/>
+      <Button Grid.Column="2" Content="{DynamicResource L.OpenImg}" Click="BrowseImage_Click"/>
      </Grid>
-     <WrapPanel Margin="0,8,0,12">
-      <Button x:Name="BrowseButton" Click="BrowseImage_Click"/>
-      <Button x:Name="OpenOutputButton" Click="OpenOutput_Click" IsEnabled="False"/>
-     </WrapPanel>
-     <TextBox x:Name="SourcePathBox" IsReadOnly="True" FlowDirection="LeftToRight" HorizontalScrollBarVisibility="Hidden"/>
-     <TextBlock x:Name="DestinationLabel" Margin="0,18,0,8"/>
+     <TextBlock x:Name="SourcePathText" FlowDirection="LeftToRight" TextAlignment="Left" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" FontFamily="Consolas" Margin="4,10,4,18"/>
+     <TextBlock Text="{DynamicResource L.Destination}" Style="{StaticResource Caption}"/>
      <Grid>
-      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-      <TextBox x:Name="DestinationPathBox" IsReadOnly="True" FlowDirection="LeftToRight" HorizontalScrollBarVisibility="Hidden"
-       ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-      <Button x:Name="FolderButton" Grid.Column="1" Click="ChooseFolder_Click"/>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <Border Background="{DynamicResource Field}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="12" Padding="12" MinHeight="44">
+       <TextBlock x:Name="DestinationPathText" FlowDirection="LeftToRight" TextAlignment="Left" TextWrapping="Wrap" FontFamily="Consolas" VerticalAlignment="Center"/>
+      </Border>
+      <Button Grid.Column="1" Content="{DynamicResource L.ChooseFolder}" Click="ChooseFolder_Click"/>
+      <Button Grid.Column="2" Content="{DynamicResource L.CopyPath}" Click="CopyPath_Click"/>
      </Grid>
-     <Border Background="{DynamicResource Field}" CornerRadius="10" Padding="12" Margin="0,8,0,0">
-      <TextBlock x:Name="DestinationVisibleText" Text="{Binding Text, ElementName=DestinationPathBox}"
-       FlowDirection="LeftToRight" TextAlignment="Left" TextWrapping="Wrap"
-       FontFamily="Consolas" Foreground="{DynamicResource Text}"/>
-     </Border>
-     <Button x:Name="CopyPathButton" HorizontalAlignment="Left" Click="CopyPath_Click"/>
-     <WrapPanel Margin="0,12,0,0">
-      <StackPanel Margin="0,0,16,8" Width="220">
-       <TextBlock x:Name="ModeLabel" Margin="0,0,0,6"/>
+
+     <Border Height="1" Background="{DynamicResource Line}" Margin="0,22,0,22"/>
+     <Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <StackPanel>
+       <TextBlock Text="{DynamicResource L.FileTypes}" Style="{StaticResource Caption}"/>
+       <WrapPanel FlowDirection="LeftToRight">
+        <CheckBox x:Name="JpegCheck" Content="JPEG / JPG" IsChecked="True"/>
+        <CheckBox x:Name="PngCheck" Content="PNG" IsChecked="True"/>
+        <CheckBox x:Name="OtherImagesCheck" Content="{DynamicResource L.OtherImages}"/>
+        <CheckBox x:Name="PdfCheck" Content="PDF"/>
+        <CheckBox x:Name="OfficeCheck" Content="{DynamicResource L.Office}"/>
+        <CheckBox x:Name="VideoCheck" Content="{DynamicResource L.Video}"/>
+        <CheckBox x:Name="AudioCheck" Content="{DynamicResource L.Audio}"/>
+        <CheckBox x:Name="ArchivesCheck" Content="ZIP"/>
+        <CheckBox x:Name="RawCheck" Content="{DynamicResource L.Raw}"/>
+       </WrapPanel>
+       <StackPanel Orientation="Horizontal">
+        <Button Content="{DynamicResource L.AllTypes}" Tag="all" Click="SelectTypes_Click" Padding="10,5"/>
+        <Button Content="{DynamicResource L.ClearSelection}" Tag="none" Click="SelectTypes_Click" Padding="10,5"/>
+       </StackPanel>
+       <TextBlock Text="{DynamicResource L.TypesHint}" Style="{StaticResource Caption}"/>
+       <TextBlock Text="{DynamicResource L.ScanMode}" Style="{StaticResource Caption}" Margin="0,12,0,7"/>
        <ComboBox x:Name="ModeSelector" SelectionChanged="Mode_Changed">
-        <ComboBoxItem x:Name="QuickItem"/><ComboBoxItem x:Name="DeepItem"/>
+        <ComboBoxItem Content="{DynamicResource L.Quick}"/><ComboBoxItem Content="{DynamicResource L.Deep}"/>
        </ComboBox>
+       <TextBlock x:Name="ModeHintText" Style="{StaticResource Caption}" Margin="0,10,0,0"/>
       </StackPanel>
-      <StackPanel Width="250" Margin="0,0,0,8">
-       <TextBlock x:Name="PrefixLabel" Margin="0,0,0,6"/>
-       <TextBox x:Name="PrefixBox" Text="image" FlowDirection="LeftToRight" MaxLength="80"/>
+      <StackPanel Grid.Column="2">
+       <TextBlock Text="{DynamicResource L.SavePolicy}" Style="{StaticResource Caption}"/>
+       <ComboBox x:Name="PolicySelector">
+        <ComboBoxItem Content="{DynamicResource L.SaveAll}"/><ComboBoxItem Content="{DynamicResource L.ChooseAfter}"/>
+       </ComboBox>
+       <CheckBox x:Name="SaveChangedCheck" IsChecked="True" Content="{DynamicResource L.SaveChanged}" ToolTip="{DynamicResource L.SaveChangedHint}" Margin="0,10,0,0"/>
+       <TextBlock Text="{DynamicResource L.SaveHint}" Style="{StaticResource Caption}" Margin="0,10,0,0"/>
+       <TextBlock Text="{DynamicResource L.Prefix}" Style="{StaticResource Caption}" Margin="0,12,0,7"/>
+       <TextBox x:Name="PrefixBox" Text="recovered" MaxLength="80" FlowDirection="LeftToRight"/>
       </StackPanel>
-     </WrapPanel>
-     <TextBlock x:Name="ModeHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,3,0,0"/>
-     <TextBlock x:Name="SupportText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,16,0,10"/>
-     <WrapPanel>
-      <Button x:Name="ScanButton" Background="{DynamicResource Accent}" Foreground="{DynamicResource AccentText}" Click="StartScan_Click"/>
-      <Button x:Name="PauseButton" Click="Pause_Click" IsEnabled="False"/>
-      <Button x:Name="CancelButton" Click="Cancel_Click" IsEnabled="False"/>
-     </WrapPanel>
+     </Grid>
     </StackPanel>
    </Border>
+
+   <Grid Margin="0,0,0,18">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <Border Style="{StaticResource CardStyle}" Padding="15" Margin="0,0,8,0"><StackPanel><TextBlock Text="{DynamicResource L.Found}" Style="{StaticResource Caption}"/><TextBlock x:Name="FoundText" Text="0" FontSize="25" FontWeight="SemiBold"/></StackPanel></Border>
+    <Border Grid.Column="1" Style="{StaticResource CardStyle}" Padding="15" Margin="0,0,8,0"><StackPanel><TextBlock Text="{DynamicResource L.Saved}" Style="{StaticResource Caption}"/><TextBlock x:Name="SavedText" Text="0" FontSize="25" FontWeight="SemiBold"/></StackPanel></Border>
+    <Border Grid.Column="2" Style="{StaticResource CardStyle}" Padding="15" Margin="0,0,8,0"><StackPanel><TextBlock Text="{DynamicResource L.Speed}" Style="{StaticResource Caption}"/><TextBlock x:Name="SpeedText" Text="—" FontSize="23" FontWeight="SemiBold" FlowDirection="LeftToRight"/></StackPanel></Border>
+    <Border Grid.Column="3" Style="{StaticResource CardStyle}" Padding="15" Margin="0"><StackPanel><TextBlock Text="{DynamicResource L.Eta}" Style="{StaticResource Caption}"/><TextBlock x:Name="EtaText" Text="—" FontSize="23" FontWeight="SemiBold" FlowDirection="LeftToRight"/></StackPanel></Border>
+   </Grid>
+
    <Border Style="{StaticResource CardStyle}">
     <StackPanel>
-     <TextBlock x:Name="ResultsTitle" FontSize="19" FontWeight="SemiBold" Margin="0,0,0,14"/>
+     <Grid Margin="0,0,0,12">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,12,0"/>
+      <StackPanel Grid.Column="1" Orientation="Horizontal">
+       <Button x:Name="StartButton" Content="{DynamicResource L.Start}" Background="{DynamicResource Accent}" Foreground="{DynamicResource AccentText}" Click="StartScan_Click"/>
+       <Button x:Name="PauseButton" Content="{DynamicResource L.Pause}" IsEnabled="False" Click="Pause_Click"/>
+       <Button x:Name="StopButton" Content="{DynamicResource L.Stop}" IsEnabled="False" Click="Stop_Click"/>
+      </StackPanel>
+     </Grid>
+     <ProgressBar x:Name="ScanProgress" Height="7" Minimum="0" Maximum="100" Background="{DynamicResource Surface}" Foreground="{DynamicResource Accent}" BorderThickness="0"/>
+    </StackPanel>
+   </Border>
+
+   <Border Style="{StaticResource CardStyle}">
+    <StackPanel>
+     <Grid Margin="0,0,0,12">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+      <TextBlock Text="{DynamicResource L.Results}" FontSize="21" FontWeight="SemiBold"/>
+      <Button x:Name="OpenOutputButton" Grid.Column="1" Content="{DynamicResource L.OpenFolder}" Click="OpenOutput_Click" IsEnabled="False"/>
+     </Grid>
+     <WrapPanel x:Name="SelectionTools" Margin="0,0,0,8">
+      <Button Content="{DynamicResource L.SelectAll}" Click="SelectAll_Click"/>
+      <Button Content="{DynamicResource L.ClearSelection}" Click="ClearSelection_Click"/>
+      <Button x:Name="SaveSelectedButton" Content="{DynamicResource L.SaveSelected}" Background="{DynamicResource Accent}" Foreground="{DynamicResource AccentText}" Click="SaveSelected_Click" IsEnabled="False"/>
+      <Button x:Name="RenameButton" Content="{DynamicResource L.Rename}" Click="Rename_Click" IsEnabled="False"/>
+      <Button x:Name="BatchButton" Content="{DynamicResource L.BatchRename}" Click="BatchRename_Click" IsEnabled="False"/>
+     </WrapPanel>
      <WrapPanel Margin="0,0,0,12">
-      <TextBlock x:Name="SortLabel" VerticalAlignment="Center" Margin="0,0,8,0"/>
-      <ComboBox x:Name="SortSelector" Width="160" SelectionChanged="Sort_Changed" Margin="0,0,6,0">
-       <ComboBoxItem x:Name="SortNameItem"/><ComboBoxItem x:Name="SortSizeItem"/><ComboBoxItem x:Name="SortTypeItem"/>
+      <TextBlock Text="{DynamicResource L.SortBy}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+      <ComboBox x:Name="SortSelector" Width="155" SelectionChanged="Sort_Changed">
+       <ComboBoxItem Content="{DynamicResource L.Name}"/><ComboBoxItem Content="{DynamicResource L.Size}"/><ComboBoxItem Content="{DynamicResource L.Type}"/>
       </ComboBox>
       <Button x:Name="DirectionButton" Click="Direction_Click"/>
-      <Button x:Name="RenameButton" Click="Rename_Click" IsEnabled="False"/>
+      <TextBlock x:Name="SelectedCountText" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="{DynamicResource Muted}"/>
      </WrapPanel>
-     <!-- Fixed viewport preserves virtualization and gives the results their own scrollbar. -->
-     <DataGrid x:Name="ResultsGrid" Height="280" AutoGenerateColumns="False" IsReadOnly="True"
-      CanUserAddRows="False" CanUserDeleteRows="False" CanUserSortColumns="True" HeadersVisibility="Column" RowHeight="38"
-      SelectionMode="Single" SelectionChanged="Results_SelectionChanged"
+     <DataGrid x:Name="ResultsGrid" Height="350" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False"
+      CanUserSortColumns="True" SelectionMode="Single" SelectionChanged="Results_SelectionChanged" HeadersVisibility="Column"
+      RowHeight="40" BorderThickness="0" GridLinesVisibility="None" EnableRowVirtualization="True" EnableColumnVirtualization="True"
       Background="{DynamicResource Card}" RowBackground="{DynamicResource Card}" AlternatingRowBackground="{DynamicResource Surface}"
-      BorderThickness="0" GridLinesVisibility="None" EnableRowVirtualization="True"
-      ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto"
-      PreviewMouseWheel="Results_MouseWheel">
+      ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Auto" PreviewMouseWheel="Results_MouseWheel">
       <DataGrid.Columns>
-       <DataGridTextColumn x:Name="FileColumn" Binding="{Binding FileName}" Width="*" MinWidth="230"/>
-       <DataGridTextColumn x:Name="TypeColumn" Binding="{Binding FileType}" Width="80"/>
-       <DataGridTextColumn x:Name="SizeColumn" Binding="{Binding FileSize}" SortMemberPath="Bytes" Width="210"/>
-       <DataGridTextColumn x:Name="DimensionsColumn" Binding="{Binding Dimensions}" Width="120"/>
-       <DataGridTextColumn x:Name="OffsetColumn" Binding="{Binding Offset}" Width="130"/>
+       <DataGridTemplateColumn Width="44" CanUserSort="False"><DataGridTemplateColumn.CellTemplate><DataTemplate>
+        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+       </DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+       <DataGridTextColumn Header="{DynamicResource L.Name}" Binding="{Binding FileName}" IsReadOnly="True" Width="250"/>
+       <DataGridTextColumn Header="{DynamicResource L.Type}" Binding="{Binding FileType}" IsReadOnly="True" Width="75"/>
+       <DataGridTextColumn Header="{DynamicResource L.Size}" Binding="{Binding FileSize}" SortMemberPath="Bytes" IsReadOnly="True" Width="205"/>
+       <DataGridTextColumn Header="{DynamicResource L.Pixels}" Binding="{Binding Dimensions}" IsReadOnly="True" Width="110"/>
+       <DataGridTextColumn Header="{DynamicResource L.Camera}" Binding="{Binding Camera}" IsReadOnly="True" Width="180"/>
+       <DataGridTextColumn Header="{DynamicResource L.DateTaken}" Binding="{Binding DateTaken}" IsReadOnly="True" Width="175"/>
+       <DataGridTextColumn Header="{DynamicResource L.State}" Binding="{Binding SavedState}" IsReadOnly="True" Width="150"/>
+       <DataGridTextColumn Header="{DynamicResource L.RecoveryDetails}" Binding="{Binding RecoveryDetails}" IsReadOnly="True" Width="260"/>
       </DataGrid.Columns>
      </DataGrid>
-     <TextBlock x:Name="EmptyHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,0"/>
-     <TextBlock x:Name="ResultsPathLabel" Foreground="{DynamicResource Muted}" Margin="0,12,0,5"/>
-     <TextBlock x:Name="ResultsPathText" FlowDirection="LeftToRight" TextAlignment="Left" FontFamily="Consolas" TextWrapping="Wrap"/>
+     <TextBlock x:Name="EmptyText" Text="{DynamicResource L.Empty}" HorizontalAlignment="Center" Margin="0,14,0,0" Foreground="{DynamicResource Muted}"/>
+     <TextBlock Text="{DynamicResource L.OutputPath}" Style="{StaticResource Caption}" Margin="0,18,0,6"/>
+     <TextBlock x:Name="ResultsPathText" FlowDirection="LeftToRight" TextAlignment="Left" TextWrapping="Wrap" FontFamily="Consolas"/>
     </StackPanel>
    </Border>
-   <ProgressBar x:Name="ScanProgress" Height="8" Minimum="0" Maximum="100" Background="{DynamicResource Surface}" Foreground="{DynamicResource Accent}" BorderThickness="0"/>
-   <TextBlock x:Name="StatusText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,12,0,12"/>
+   <TextBlock Text="{DynamicResource L.LegalHint}" Style="{StaticResource Caption}"/>
+   <TextBlock x:Name="SettingsWarning" Foreground="{DynamicResource Accent}" TextWrapping="Wrap"/>
   </StackPanel>
  </ScrollViewer>
 </Window>

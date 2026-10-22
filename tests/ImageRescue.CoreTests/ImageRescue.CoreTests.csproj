@@ -5,7 +5,11 @@
  </PropertyGroup>
  <ItemGroup>
   <Compile Include="../../src/ImageRescue.App/Recovery/Carver.cs" Link="Carver.cs"/>
+  <Compile Include="../../src/ImageRescue.App/Recovery/AdditionalFormats.cs" Link="AdditionalFormats.cs"/>
   <Compile Include="../../src/ImageRescue.App/Recovery/ResultFiles.cs" Link="ResultFiles.cs"/>
-  <Content Include="Fixtures/*" CopyToOutputDirectory="PreserveNewest"/>
+  <Compile Include="../../src/ImageRescue.App/Recovery/PhotoMetadata.cs" Link="PhotoMetadata.cs"/>
+  <Compile Include="../../src/ImageRescue.App/Presentation/Preferences.cs" Link="Preferences.cs"/>
+  <Content Include="../../src/ImageRescue.App/Assets/Languages/*.json" Link="Languages/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest"/>
+  <Content Include="Fixtures/**/*" CopyToOutputDirectory="PreserveNewest"/>
  </ItemGroup>
 </Project>

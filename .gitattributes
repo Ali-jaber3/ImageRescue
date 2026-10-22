@@ -1,0 +1,3 @@
+
+tests/ImageRescue.CoreTests/Fixtures/** -text
+*.pdf binary
